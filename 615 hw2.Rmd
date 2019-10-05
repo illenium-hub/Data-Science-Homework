@@ -1,0 +1,249 @@
+---
+title: "615 hw2"
+author: "Shicheng Wang"
+date: "10/2/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning = F)
+pacman::p_load("tidyverse","knitr","kableExtra","gapminder","magrittr")
+data<- gapminder
+library(tidyr)
+library(dplyr)
+library(gapminder)
+library(knitr)
+library(kableExtra)
+library(magrittr)
+library(ggplot2)
+library(AER)
+```
+
+# Problem 1  
+## How many continents are included in the data set?  
+```{r}
+data_continent<-select(data,continent)
+unique(data_continent)
+```
+_There are five continents shows in the data._  
+## How many countrys are included? How many countries per continent?  
+```{r}
+data_country<-select(data,country)
+dim(unique(data_country))
+table(data$continent)
+```
+_There are 142 countries._  
+## Produce a report  
+```{r}
+report<-data %>% group_by(continent,year) %>% summarise(pop_con=as.numeric(sum(pop)),gdp_cap=as.numeric(sum(gdpPercap)/pop_con))
+report %>% arrange(continent)
+
+chart<-cbind(report[1:12,],report[13:24,],report[25:36,],report[37:48,],report[49:60,])
+kable(chart, caption = "Total population and total GDP for each continents", align = "l", booktab =T, format = "latex",longtable = F) %>% kable_styling(latex_options = c("HOLD_position")) %>% add_header_above(c("Year"=1,"Africa"=2,"American"=2,"Asia"=2,"Europe"=2,"Oceania"=2))
+```
+
+## Produce a table  
+```{r}
+data_1952<-data %>% filter(year=="1952")
+data_2007<-data %>% filter(year=="2007")
+part_1<-data_1952 %>% group_by(continent) %>% summarize(gdpPerson_1952=as.numeric(sum(gdpPercap/as.numeric(sum(pop)))))
+part_2<-data_2007 %>% group_by(continent) %>% summarize(gdpPerson_2007=as.numeric(sum(gdpPercap/as.numeric(sum(pop)))))
+kable(merge(part_1,part_2,by='continent',all=T),alig ='c',caption ='Contrast table')
+```
+
+## Summary  
+```{r}
+ggplot(part_1, aes(x = continent, y = gdpPerson_1952))+ 
+geom_bar(position = "dodge", stat = "identity",fill='skyblue',colour='darkgrey')+
+geom_text(aes(label=gdpPerson_1952),vjust=1.5,colour="red")
+
+ggplot(part_2, aes(x = continent, y = gdpPerson_2007))+ 
+geom_bar(position = "dodge", stat = "identity",fill='lightyellow',colour='black')+
+geom_text(aes(label=gdpPerson_2007),vjust=1.5,colour="red")
+```
+
+## Which countries in the dataset have had periods of negative population growth?  
+## Illustrate your answer with a table or plot.  
+```{r}
+data_Asia<-arrange(data[data$continent=='Asia',],country)
+unique(select(data_Asia,country))
+#Afghanistan
+Afg<-data_Asia[data_Asia$country=='Afghanistan',]
+plot(y=Afg$pop,x=Afg$year,type = "o",xlab = "Time" ,ylab = "Population", main = "Population tendency of Afg")
+#Cambodia
+Cam<-data_Asia[data_Asia$country=='Cambodia',]
+plot(y=Cam$pop,x=Cam$year,type = "o",xlab = "Time" ,ylab = "Population", main = "Population tendency of Cam")
+#Kuwait
+Kuw<-data_Asia[data_Asia$country=='Kuwait',]
+plot(y=Kuw$pop,x=Kuw$year,type = "o",xlab = "Time" ,ylab = "Population", main = "Population tendency of Kuw")
+#Lebanon
+Leb<-data_Asia[data_Asia$country=='Lebanon',]
+plot(y=Leb$pop,x=Leb$year,type = "o",xlab = "Time" ,ylab = "Population", main = "Population tendency of Leb")
+#West Bank and Gaza
+Wbg<-data_Asia[data_Asia$country=='West Bank and Gaza',]
+plot(y=Wbg$pop,x=Wbg$year,type = "o",xlab = "Time" ,ylab = "Population", main = "Population tendency of Wbg")
+```
+_The decrease time period of the countries above is:_       
+_Afghanistan:1972-1977_     
+_Cambodia:1972-1977_    
+_Kuwait:1987-1992_      
+_Lebanon:1977-1987_    
+_West Bank and Gaza:1967-1972_     
+
+## Which countries in the dataset have had the highest rate of growth in per capita GDP?  
+## Illustrate your answer with a table or plot.  
+```{r}
+increase<-data_1952 %>% mutate(rate = (data_2007 $gdpPercap-data_1952$gdpPercap)/data_1952$gdpPercap)
+increase<-increase %>% filter(rate == max(rate))
+increase
+```
+
+# Problem 2  
+## The data for Problem 2 is the Fertility data in the AER package. This data is from the 1980 US Census and is comprised of date on married women aged 21-35 with two or more children. The data report the gender of each woman’s first and second child, the woman’s race, age, number of weeks worked in 1979, and whether the woman had more than two children.  
+```{r}
+data("Fertility")
+MM <- Fertility %>% filter(gender1=="male"& gender2=="male")
+MF <- Fertility %>% filter(gender1=="male" & gender2=="female")
+FF <- Fertility %>% filter(gender1=="female" & gender2=="female")
+FM <- Fertility %>% filter(gender1=="female" & gender2=="male")
+
+slices <- c(67799, 63185,60946,62724)
+lbls <- c("MM","MF","FF","FM")
+pct <- round(slices/sum(slices),3)
+lbls <- paste(lbls,pct)
+lbls <- paste(lbls,"%",sep = "")
+pie(slices,labels = lbls,col = rainbow(length(lbls)),
+    main = "Frequency presentation")
+```
+
+## There are four possible gender combinations for the first two Children. Product a plot the contracts the frequency of these four combinations. Are the frequencies different for women in their 20s and wemen who are older than 29?  
+```{r}
+Fertility_1 <- Fertility %>% filter(age<30)
+Fertility_2 <- Fertility %>% filter(age>29)
+MM_1 <- Fertility_1 %>% filter(gender1=="male"& gender2=="male")
+MF_1 <- Fertility_1 %>% filter(gender1=="male" & gender2=="female")
+FF_1 <- Fertility_1 %>% filter(gender1=="female" & gender2=="female")
+FM_1 <- Fertility_1 %>% filter(gender1=="female" & gender2=="male")
+
+MM_2 <- Fertility_2 %>% filter(gender1=="male"& gender2=="male")
+MF_2 <- Fertility_2 %>% filter(gender1=="male" & gender2=="female")
+FF_2 <- Fertility_2 %>% filter(gender1=="female" & gender2=="female")
+FM_2 <- Fertility_2 %>% filter(gender1=="female" & gender2=="male")
+
+slices <- c(24505, 22653,22183,22508)
+lbls <- c("MM_1","MF_1","FF_1","FM_1")
+pct <- round(slices/sum(slices),3)
+lbls <- paste(lbls,pct)
+lbls <- paste(lbls,"%",sep = "")
+pie(slices,labels = lbls,col = rainbow(length(lbls)),
+    main = "Frequency of these four combinations with age under 30")
+
+slices <- c(43294, 43294,38763,40216)
+lbls <- c("MM_2","MF_2","FF_2","FM_2")
+pct <- round(slices/sum(slices),3)
+lbls <- paste(lbls,pct)
+lbls <- paste(lbls,"%",sep = "")
+pie(slices,labels = lbls,col = rainbow(length(lbls)),
+    main = "Frequency of these four combinations with age over 30")
+```
+
+## Produce a plot that contrasts the frequency of having more than two children by race and ethnicity.  
+```{r}
+New_Fertility <- Fertility %>% filter(morekids == "yes")
+
+Afam_Y <- New_Fertility %>% filter(afam == "yes" & hispanic == "no" & other == "no")
+
+Hisp_Y <- New_Fertility %>% filter(afam == "no" & hispanic == "yes" & other == "no")
+
+Other_Y <- New_Fertility %>% filter(afam == "no" & hispanic == "no" & other == "yes")
+
+slices <- c(5933, 5555,2581)
+lbls <- c("Afam_Y","Hisp_Y","Other_Y")
+pct <- round(slices/sum(slices),3)
+lbls <- paste(lbls,pct)
+lbls <- paste(lbls,"%",sep = "")
+pie(slices,labels = lbls,col = rainbow(length(lbls)),
+    main = "Percentage of race and ethnicity")
+```
+
+# Problem 3  
+## Use the mtcars and mpg datasets.  
+## How many times does the letter “e” occur in mtcars rownames?  
+
+```{r echo = T}
+data(mtcars)
+e_number<-sum(str_count(rownames(mtcars),"e"))
+e_number
+```
+
+## How many cars in mtcars have the brand Merc?  
+```{r}
+Merc_number<-sum(str_count(rownames(mtcars),"Merc"))
+Merc_number
+```
+
+## How many cars in mpg have the brand(“manufacturer” in mpg) Merc?  
+```{r}
+brand_number<-sum(str_count(mpg$manufacturer,"merc")) 
+brand_number
+```
+
+## Contrast the mileage data for Merc cars as reported in mtcars and mpg. Use tables, plots, and a short explaination.  
+```{r}
+MPG_1 = mpg %>% filter(manufacturer == "mercury")
+MTCARS_1 = mtcars[8:14,]
+NAME_mtcars = row.names(MTCARS_1)
+tbl_mtcars = cbind(NAME_mtcars, MTCARS_1$mpg)
+tbl_mpg = cbind(MPG_1$manufacturer, MPG_1$cty, MPG_1$hwy)
+
+kable(tbl_mtcars, digits = 2, align = "c",booktabs=TRUE, ,caption = "mtcars' Merc",col.names = c("manufacturer", "mpg" ))
+kable(tbl_mpg, digits = 2, align = "c",booktabs=TRUE, ,caption = "mpg's Merc", col.names = c("manufacturer",  "cty" ,"hwy")) 
+```
+
+# Problem 4  
+## Install the babynames package.  
+## Draw a sample of 500,000 rows from the babynames data  
+```{r}
+library(babynames)
+data = babynames
+random <- sample(1:1924655,500000,replace = F)
+random <- babynames[random,]
+random
+```
+## What names overlap boys and girls?
+```{r}
+names = random %>% group_by(name) %>% summarise(lap = length(sex)) %>% filter(lap>1)
+names
+```
+## What names were used in the 19th century but have not been used in the 21sth century?
+```{r}
+name_19 <- random %>% filter(year<1900)
+name_21 <- random %>% filter(year>1999)
+name_19 <- name_19 %>% count(name)
+name_21 <- name_21 %>% count(name)
+name_dif <- subset(name_19, !(name %in% name_21))
+
+```
+## Produce a chart that shows the relative frequency of the names “Donald”, “Hilary”, “Hillary”, “Joe”, “Barrack”, over the years 1880 through 2017.
+```{r}
+Frm_1880_2017 = random %>% filter(year >1879 & year <2018) 
+Name_1880_2017 = Frm_1880_2017 %>%filter(name == c("Donald", "Hilary", "Hillary", "Joe", "Barrack"))
+y = Name_1880_2017 %>% group_by(name) %>% summarise(n = sum(n))
+data =  y %>% mutate(frequency = c(84238/sum(n),847/sum(n),2681/sum(n),21876/sum(n)))
+Graph = ggplot(data, aes(x = name,y = frequency)) +
+geom_bar(stat = "identity")
+print(Graph + ggtitle("Frequency of the names -- Donald, Hilary, Hillary, Joe, Barrack"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
