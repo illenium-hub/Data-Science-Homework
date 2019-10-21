@@ -1,0 +1,246 @@
+---
+title: "Midterm project"
+author: "Shicheng Wang"
+date: "10/16/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,dev="CairoPNG",fig.align = "center", 
+                      fig.width = 5.656, fig.height = 4, global.par = TRUE,dpi = 500)
+```
+
+# Introduction
+\qquad As the world pace into the information age and the worldwide education has access to upper level, there are more and more innovations created over recent 40 years. According to the world intellectual property organization (WIPO) said on 15th Oct,2019, the Asia filed two-thirds of global patent, trademark and industrial design applications last year, outperforming the rest of the world in technology development. In the meantime, the US remains the country most interested in expanding into new markets. Us residents filed the most overseas patents in 2018, followed by Japanese and German residents. For the general scale, the aim of this report is to futher explore global patent application status and research on relationship between GDP and technology standard.  
+
+# Materials and methods
+\qquad I exact the data from https://data.worldbank.org and concentrate on the science&technology sector. I take the patent applications(both resident and non-resident), scientific and technical journal articles, research and developmemnt expenditure and high-technology exports. Additionally, i decide to add the variable GDP (current US$) form the Economy & Growth sector into the dataset and plan to figure out how science and technology could influence the GDP.Futhermore, it is acknowledged that technology performance vary form country and year, the The following data analyse steps show below.      
+
+
+```{r}
+library(knitr)
+library(tidyverse)
+library(kableExtra)
+```
+
+## Access data
+\qquad Using the WDI package and function to get data from world bank database.  
+```{r}
+#install the package
+library(WDI)
+new_wdi_cache<-WDIcache()
+
+#find out the IDs for the indicators we are intersted in
+WDIsearch("Patent applications.")
+WDIsearch("Scientific and technical.")
+WDIsearch("Research and development expenditure.")
+WDIsearch("High-technology exports.")
+WDIsearch("gdp.*US\\$", cache = new_wdi_cache)
+
+#download the data
+wdi_dat <- WDI(indicator = 
+c("IP.PAT.RESD", "IP.PAT.NRES", "GB.XPD.RSDV.GD.ZS","TX.VAL.TECH.CD","NY.GDP.MKTP.CD"), start = 1968, end = 2018, extra = TRUE)
+names(wdi_dat)
+head(wdi_dat)
+```
+
+## Data cleaning 
+```{r}
+#remove aggregated regional values.
+wdi_dat <- subset(wdi_dat, region != "Aggregates")
+
+#rename variables
+names(wdi_dat)[which(names(wdi_dat) == "IP.PAT.RESD")] <- "apply_resident" 
+names(wdi_dat)[which(names(wdi_dat) == "IP.PAT.NRES")] <- "apply_no_resident" 
+names(wdi_dat)[which(names(wdi_dat) == "GB.XPD.RSDV.GD.ZS")] <- "expenditure_gdp"
+names(wdi_dat)[which(names(wdi_dat) == "TX.VAL.TECH.CD")] <- "export" 
+names(wdi_dat)[which(names(wdi_dat) == "NY.GDP.MKTP.CD")] <- "GDP" 
+
+#clean NA data
+da = na.omit(wdi_dat)
+dim(da)
+```
+
+## Innovation standard worldwide  
+### World economic table
+```{r}
+#process data
+da['apply'] = da$apply_resident+da$apply_no_resident
+growth <- da %>% group_by(year) %>% 
+  summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),
+            export=mean(export),GDP=mean(GDP))
+
+#variables transformation
+growth$year <- growth$year
+growth$apply <- growth$apply/1000
+growth$expenditure_gdp <- growth$expenditure_gdp*10
+growth$export <- growth$export*10
+growth$GDP <- growth$GDP/100000000000
+```
+Produce a table
+```{r}
+kable(growth, digits = 4, align = "c",booktabs=TRUE ,
+caption = "Growth worldwide",col.names = c("year","apply", "expentiture","export","GDP" )) %>% kable_styling(latex_options = "HOLD_position")
+```
+\qquad The table above shows the average apply amounts/Research and development expenditure/high-technology export/GDP of the whole world, the next analysis based on this table.  
+
+### Variables trend
+```{r}
+#patent applications trend
+p1 = ggplot(growth, aes(x=year, y=apply)) + geom_line(colour='#6600FF') +geom_point(size=4,colour='#6699CC',shape=15)
+
+#expentiture trend
+p2 = ggplot(growth, aes(x=year, y=expenditure_gdp)) + geom_line(colour='#660000') +geom_point(size=4,colour='#336600',shape=15)
+  
+#export trend
+p3 = ggplot(growth, aes(x=year, y=export)) + geom_line(colour='#336600') +geom_point(size=4,colour='#333300',shape=15)
+
+#GDP trend
+p4 = ggplot(growth, aes(x=year, y=GDP)) + geom_line(colour='#990000')+
+  geom_point(size=4,colour='#FFFF99',shape=15)
+
+
+gridExtra::grid.arrange(p1,p2,p3,p4,ncol = 2)
+```
+\qquad After processing data from 2007 to 2017, we can see the world GDP have been fluctrating in one decade. According to these plots, we can see some facts: During 2008-2009, there are apparently sharps in these variables, we all know the subprime crisis happened in America along with a worldwide depression. Accordingly, i guess this crisis could lead to these sharps of export/GDP/expenditure/apply status. During 2012-2017, world might develop steadily due to less wars and crisises.    
+
+## Country's innovation level    
+This session's target is to figure out the relationships among existing variables.  
+
+### How income/ effect country's innovation status  
+```{r}
+income <- da %>% group_by(income,year) %>% summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),export=mean(export),GDP=mean(GDP))
+# income and apply
+p5 <- ggplot(data=income, aes(x=year, y=apply,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+# income and research and development expenditure (% of GDP)
+p6 <- ggplot(data=income, aes(x=year, y=expenditure_gdp,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+# income and high-technology exports (current US$)
+p7 <- ggplot(data=income, aes(x=year, y=export,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+
+gridExtra::grid.arrange(p5,p6,p7,ncol = 1)
+```
+\qquad From above three plots we can see the main contribution of innovation through 10 years are high-income group and upper middle income group. It can be ascribed to the reality that more income could bring with large research and education funds and correspondlingly these countries would have more suitable environment and more desire to study with meaningful topics. Low-income countries, by contrast, are not having good conditions to innovate.    
+
+### Relationships between variables
+```{r}
+#group and choose country
+country <- da %>% group_by(country) %>%  summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),export=mean(export),GDP=mean(GDP))
+#screening data by GDP
+country <- country[order(country$GDP,decreasing=F),]
+#variables transformation
+country$apply <- 10*log(country$apply)
+country$expenditure_gdp <- country$expenditure_gdp*100
+country$export <- country$export/100000000
+country$GDP <- country$GDP/1000000000
+
+#GDP & apply
+p7 <- ggplot(country, aes(x = GDP, y = apply, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#GDP & expenditure
+p8 <- ggplot(country, aes(x = GDP, y = expenditure_gdp, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#GDP & export
+p9 <- ggplot(country, aes(x = GDP, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#apply & expenditure
+p10 <- ggplot(country, aes(x = apply, y = expenditure_gdp, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#apply & export
+p11 <- ggplot(country, aes(x = apply, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#expenditure & export
+p12 <- ggplot(country, aes(x = expenditure_gdp, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+
+gridExtra::grid.arrange(p7,p8,p9,p10,p11,p12,ncol = 3)
+```
+
+\qquad Due to there are mainly four variables in the dataset, so it could exist six relationships, so i make six pairs and present a pointplot respedctively. It is easily to perceive that there is no obvious relationships between apply number and expenditure. Meanwhile, the other pairs have obvious positive correlation. Additionally, expenditure and GDP relation plot might have two lines and i think it could be attributed to some other factors such as geographical location, climate, national policy, and the like.   
+
+### GDP ranking of countries   
+```{r,include=FALSE}
+#group and choose country
+country <- da %>% group_by(country,year)
+
+#screening data by GDP
+country <- country[order(country$GDP,decreasing=F),]
+
+#variables transformation
+country$apply <- log(country$apply)
+country$expenditure_gdp <- country$expenditure_gdp*10
+country$export <- country$export/10000000000
+country$GDP <- country$GDP/100000000000
+
+#produce GDP pieplot
+country['sumGDP'] <- cumsum(country$GDP)
+country$sumGDP > sum(country$GDP)/2    
+country[95,c("country","GDP")] <- c("Other",sum(country[1:89,"GDP"]))
+```
+\qquad Rank the data in order of the country's GDP and compare each line's GDP value with the 50% of total GDP of the world one by one. From the result, we can see the sum of the five largest countries countries all has already reached the 50% of world's GDP which is larger than the total GDP of the remaining countries.    
+
+### Now produce a pieplot:
+```{r}
+a <- c(164.6,81.5,51.8,35.9,27.4,317.4)
+b <- c("United States","China","Japan","Germany","United Kingdom","Other")
+piepercent<- paste(round(100*a/sum(a), 2), "%")
+
+pie(a,labels=piepercent,col= c("skyblue","lightgreen","pink","lavender","lightyellow","lightgrey"),
+    radius = 0.85,border="brown",lty=6,main='GDP distribution worldwide')
+
+legend("topright",b,cex=0.5,fill=c("skyblue","lightgreen","pink","lavender","lightyellow","lightgrey"))
+```
+\qquad From the pie plot  we could see US, China, Japan, Germany, UK has relative high GDP which added uo to over 50% which more than the combined GDP of the rest of countries, so next analysis part concentrate on US and clearify some relationships of variables.   
+
+### US 
+```{r}
+#creat a new dataframe
+x <- filter(da, country == "United States") %>% arrange(year)
+new <- x[,c(3,6,7,8,16)]
+
+# transformation
+new$year <- new$year
+new$apply <- new$apply/1000
+new$expenditure_gdp <- new$expenditure_gdp*100
+new$export <- new$export/1000000000
+new$GDP <- new$GDP/10000000000000
+
+#US data chart
+kable(new, digits = 4, align = "c",booktabs=TRUE ,
+caption = "Us 10-year data",col.names = c("year", "expentiture","export","GDP","apply" )) %>% kable_styling(latex_options = "HOLD_position")
+
+#GDP & apply
+u1 <- ggplot(new, aes(x = GDP, y = apply, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#660000') +
+geom_point(colour='Black',shape=17) 
+#GDP & expenditure
+u2 <- ggplot(new, aes(x = GDP, y = expenditure_gdp, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#CC6600') +
+geom_point(colour='Black',shape=17) 
+#GDP & export
+u3 <- ggplot(new, aes(x = GDP, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#66CCFF') +
+geom_point(colour='Black',shape=17) 
+#apply & expenditure
+u4 <- ggplot(new, aes(x = apply, y = expenditure_gdp, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#6666FF') +
+geom_point(colour='Black',shape=17) 
+#apply & export
+u5 <- ggplot(new, aes(x = apply, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#336600') +
+geom_point(colour='Black',shape=17) 
+#expenditure & export
+u6 <- ggplot(new, aes(x = expenditure_gdp, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#330033') +
+geom_point(colour='Black',shape=17) 
+
+gridExtra::grid.arrange(u1,u2,u3,u4,u5,u6,ncol = 2)
+```
+\qquad In the first three charts, we can see as the GDP and year increasing, the export and expenditure correspondingly increase, however the export amount seems does not has the connection with GDP. In the second half, it does not appear any clear relationship.
+
+# conclusion
+In general, this report have respectively conducted five surveys and researches on the both worldwide and US(a specific country) scale. According to these plots we could see the GDP could largely influence countries' technology development. However, the GDP polarized around the world, we can imagine some low income countries might not be in a good developing condition for a long time which could be a serious reality. What's more, the country's science and technology standard could fluctuates as the world economic situation change. How to deal with the crisis is an important question for every country.
+
+

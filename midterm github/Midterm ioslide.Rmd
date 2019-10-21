@@ -1,0 +1,249 @@
+---
+title: "615 Midterm Project"
+author: "Shicheng Wang"
+date: "10/21/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(knitr)
+library(tidyverse)
+library(kableExtra)
+```
+
+
+## Introduction
+- **Asia**: filed two-thirds of global patent
+- **Us**: residents filed the most overseas patents in 2018
+- **Aim**：patent application status/GDP/technology standard.
+
+## Materials description
+- **Data**: https://data.worldbank.org (Science technology & Economy growth sector)
+- **Access**: WDI package
+- **Variables**: GDP/apply/expenditure/export
+- **Clean**: NA data/regional values.
+
+```{r,echo=FALSE,include=FALSE}
+#install the package
+library(WDI)
+new_wdi_cache<-WDIcache()
+
+#find out the IDs for the indicators we are intersted in
+WDIsearch("Patent applications.")
+WDIsearch("Scientific and technical.")
+WDIsearch("Research and development expenditure.")
+WDIsearch("High-technology exports.")
+WDIsearch("gdp.*US\\$", cache = new_wdi_cache)
+
+#download the data
+wdi_dat <- WDI(indicator = 
+c("IP.PAT.RESD", "IP.PAT.NRES", "GB.XPD.RSDV.GD.ZS","TX.VAL.TECH.CD","NY.GDP.MKTP.CD"), start = 1968, end = 2018, extra = TRUE)
+names(wdi_dat)
+head(wdi_dat)
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+#remove aggregated regional values.
+wdi_dat <- subset(wdi_dat, region != "Aggregates")
+
+#rename variables
+names(wdi_dat)[which(names(wdi_dat) == "IP.PAT.RESD")] <- "apply_resident" 
+names(wdi_dat)[which(names(wdi_dat) == "IP.PAT.NRES")] <- "apply_no_resident" 
+names(wdi_dat)[which(names(wdi_dat) == "GB.XPD.RSDV.GD.ZS")] <- "expenditure_gdp"
+names(wdi_dat)[which(names(wdi_dat) == "TX.VAL.TECH.CD")] <- "export" 
+names(wdi_dat)[which(names(wdi_dat) == "NY.GDP.MKTP.CD")] <- "GDP" 
+
+#clean NA data
+da = na.omit(wdi_dat)
+dim(da)
+```
+
+ 
+## World average table
+```{r,echo=FALSE,include=TRUE}
+#process data
+da['apply'] = da$apply_resident+da$apply_no_resident
+growth <- da %>% group_by(year) %>% 
+  summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),
+            export=mean(export),GDP=mean(GDP))
+
+#variables transformation
+growth$year <- growth$year
+growth$apply <- growth$apply/1000
+growth$expenditure_gdp <- growth$expenditure_gdp*10
+growth$export <- growth$export*10
+growth$GDP <- growth$GDP/100000000000
+growth_new <- growth[1:6,]
+
+#produce a table
+kable(growth_new, digits = 4, align = "c",booktabs=TRUE ,
+caption = "Growth worldwide",col.names = c("year","apply", "expentiture","export","GDP" )) %>% kable_styling(latex_options = "HOLD_position")
+```
+  
+
+## Variables trend
+```{r,echo=FALSE,include=TRUE}
+#patent applications trend
+p1 = ggplot(growth, aes(x=year, y=apply)) + geom_line(colour='#6600FF') +geom_point(size=4,colour='#6699CC',shape=15)
+
+#expentiture trend
+p2 = ggplot(growth, aes(x=year, y=expenditure_gdp)) + geom_line(colour='#660000') +geom_point(size=4,colour='#336600',shape=15)
+  
+#export trend
+p3 = ggplot(growth, aes(x=year, y=export)) + geom_line(colour='#336600') +geom_point(size=4,colour='#333300',shape=15)
+
+#GDP trend
+p4 = ggplot(growth, aes(x=year, y=GDP)) + geom_line(colour='#990000')+
+  geom_point(size=4,colour='#FFFF99',shape=15)
+
+
+gridExtra::grid.arrange(p1,p2,p3,p4,ncol = 2)
+```
+
+
+## GDP effect over years 
+```{r,echo=FALSE,include=TRUE, warning=FALSE}
+income <- da %>% group_by(income,year) %>% summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),export=mean(export),GDP=mean(GDP))
+# income and apply
+p5 <- ggplot(data=income, aes(x=year, y=apply,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+# income and research and development expenditure (% of GDP)
+p6 <- ggplot(data=income, aes(x=year, y=expenditure_gdp,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+# income and high-technology exports (current US$)
+p7 <- ggplot(data=income, aes(x=year, y=export,fill=income)) +
+      geom_col(stat="identity",position = "dodge") + scale_x_continuous("year",breaks = seq(2007,2017,1))
+
+gridExtra::grid.arrange(p5,p6,p7,ncol = 1)
+```
+
+
+## Relationships among variables
+```{r,echo=FALSE,include=TRUE}
+#group and choose country
+country <- da %>% group_by(country) %>%  summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),export=mean(export),GDP=mean(GDP))
+#screening data by GDP
+country <- country[order(country$GDP,decreasing=F),]
+#variables transformation
+country$apply <- 10*log(country$apply)
+country$expenditure_gdp <- country$expenditure_gdp*100
+country$export <- country$export/100000000
+country$GDP <- country$GDP/1000000000
+
+#GDP & apply
+p7 <- ggplot(country, aes(x = GDP, y = apply, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#GDP & expenditure
+p8 <- ggplot(country, aes(x = GDP, y = expenditure_gdp, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#GDP & export
+p9 <- ggplot(country, aes(x = GDP, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#apply & expenditure
+p10 <- ggplot(country, aes(x = apply, y = expenditure_gdp, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#apply & export
+p11 <- ggplot(country, aes(x = apply, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+#expenditure & export
+p12 <- ggplot(country, aes(x = expenditure_gdp, y = export, color = country)) + 
+geom_point() +theme(legend.position = 'none')
+
+gridExtra::grid.arrange(p7,p8,p9,p10,p11,p12,ncol = 3)
+```
+
+
+## GDP ranking of countries   
+```{r,echo=FALSE,include=FALSE}
+#group and choose country
+country <- da %>% group_by(country) %>%  summarize(apply=mean(apply),expenditure_gdp=mean(expenditure_gdp),export=mean(export),GDP=mean(GDP))
+
+#screening data by GDP
+country <- country[order(country$GDP,decreasing=F),]
+
+#variables transformation
+country$apply <- log(country$apply)
+country$expenditure_gdp <- country$expenditure_gdp*10
+country$export <- country$export/10000000000
+country$GDP <- country$GDP/100000000000
+
+#produce GDP pieplot
+country['sumGDP'] <- cumsum(country$GDP)
+country$sumGDP > sum(country$GDP)/2    
+country[95,c("country","GDP")] <- c("Other",sum(country[1:89,"GDP"]))
+```
+
+```{r,echo=FALSE,include=TRUE}
+a <- c(164.6,81.5,51.8,35.9,27.4,317.4)
+b <- c("United States","China","Japan","Germany","United Kingdom","Other")
+piepercent<- paste(round(100*a/sum(a), 2), "%")
+
+pie(a,labels=piepercent,col= c("skyblue","lightgreen","pink","lavender","lightyellow","lightgrey"),
+    radius = 0.85,border="brown",lty=6,main='GDP distribution worldwide')
+
+legend("topright",b,cex=0.5,fill=c("skyblue","lightgreen","pink","lavender","lightyellow","lightgrey"))
+```
+ 
+
+## US data
+```{r,echo=FALSE,include=TRUE}
+#creat a new dataframe
+x <- filter(da, country == "United States") %>% arrange(year)
+new <- x[,c(3,6,7,8,16)]
+
+# transformation
+new$year <- new$year
+new$apply <- new$apply/1000
+new$expenditure_gdp <- new$expenditure_gdp*100
+new$export <- new$export/1000000000
+new$GDP <- new$GDP/10000000000000
+
+new_1 <- new[1:6,]
+
+#US data chart
+kable(new_1, digits = 4, align = "c",booktabs=TRUE ,
+caption = "Us 10-year data",col.names = c("year", "expentiture","export","GDP","apply" )) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+
+## US's relationship through a decade
+```{r}
+#GDP & apply
+u1 <- ggplot(new, aes(x = GDP, y = apply, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#660000') +
+geom_point(colour='Black',shape=17) 
+#GDP & expenditure
+u2 <- ggplot(new, aes(x = GDP, y = expenditure_gdp, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#CC6600') +
+geom_point(colour='Black',shape=17) 
+#GDP & export
+u3 <- ggplot(new, aes(x = GDP, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#66CCFF') +
+geom_point(colour='Black',shape=17) 
+#apply & expenditure
+u4 <- ggplot(new, aes(x = apply, y = expenditure_gdp, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#6666FF') +
+geom_point(colour='Black',shape=17) 
+#apply & export
+u5 <- ggplot(new, aes(x = apply, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#336600') +
+geom_point(colour='Black',shape=17) 
+#expenditure & export
+u6 <- ggplot(new, aes(x = expenditure_gdp, y = export, color = year)) + 
+geom_text(aes(label = year), size=3, nudge_y = 0.2,colour='#330033') +
+geom_point(colour='Black',shape=17) 
+
+gridExtra::grid.arrange(u1,u2,u3,u4,u5,u6,ncol = 2)
+```
+
+
+## Conclusion
+- **Five surveys**(worldwide/US)
+- **GDP impact**
+- **Reality**
+
+
+
+
