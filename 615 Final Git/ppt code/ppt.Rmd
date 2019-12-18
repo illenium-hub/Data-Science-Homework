@@ -1,0 +1,440 @@
+---
+title: "Restaurants business analysis"
+author: "Reporter: Shicheng Wang"
+date: "Time: 12/10/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE,dpi=500} 
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(
+ggplot2,
+knitr,
+arm,
+data.table,
+foreign,
+gridExtra,
+car,
+stringr,
+rstan,
+rstanarm,
+tidyverse,
+dplyr,
+gridExtra,
+magrittr,
+tidytext
+)
+```
+
+```{r,include=FALSE}
+## access
+d <- read.csv('/Applications/BU/BU/615 Data Science in R/hw/615 final project/data/zomato.csv')
+
+## clear NA and columns which has 0 votes.
+d <- na.omit(d)
+d$Votes<-as.numeric(d$Votes)
+d <- filter(d,d$Votes!=0)
+
+## replace country id with actual name
+d$Country.Code[d$Country.Code==1] <- 'india'
+d$Country.Code[d$Country.Code==216] <- 'us'
+d$Country.Code[d$Country.Code==215] <- 'uk'
+d$Country.Code[d$Country.Code==189] <- 'southafrica'
+
+## select useful columns
+d <- d[,c(2:4,6,8:14,16:21)]
+
+## diveide (country code = country)
+india<-filter(d,Country.Code=='india')
+us<-filter(d,Country.Code=='us')
+uk<-filter(d,Country.Code=='uk')
+southafrica<-filter(d,Country.Code=='southafrica')
+
+## unify the exchange rate
+us$Average.Cost.for.two = as.numeric(us$Average.Cost.for.two)
+india$Average.Cost.for.two = 0.01413*india$Average.Cost.for.two
+uk$Average.Cost.for.two = 1.3324*uk$Average.Cost.for.two
+southafrica$Average.Cost.for.two = 0.06892*southafrica$Average.Cost.for.two
+
+## merge
+da <- rbind(us,india,uk,southafrica)
+da$Currency <- 'dollar'
+```
+
+
+# Part1: Initial work
+615 final project
+
+## 1.1 Introduction     
+**Background**     
+- People always have different preference in eating through out world.      
+- Restaurant's service is directly related to its rating score.    
+- Restaurant business make a strong attribution to national economic.      
+
+**Research question**           
+- Curve the characteristics and relationships of potential factors that could influence restaurant's rate.      
+- Restaurants' economical effectiveness in different country     
+
+**Mehod applied**          
+- C-tree    
+- Exploratory data analysis (EDA)    
+- Principle component analysis (PCA)    
+- Text analysis    
+- Mapping   
+
+
+## 1.2 Data sources    
+- Zomato Restaurants Data: [link](https://www.kaggle.com/shrutimehta/zomato-restaurants-data)  
+
+## 1.3 Data interpretation   
+Variable Name              | Interpretation
+-------------------------  | -----------------------------
+Country.Code               | Restaurant located at which country
+Cuisines                   | Types Of Cuisines Served
+Average.Cost.for.two       | Average Cost if two people visit the Restaurant
+Has.Table.booking          | Can we book tables in Restaurant? Yes/No
+Has.Online.delivery        | Can we have online delivery ? Yes/No
+Price.range                | Categorized price between 1-4
+Aggregate.rating           | Categorizing ratings between 1-5
+
+
+## 1.4 Data overview    
+```{r,echo=FALSE}
+kable(d[1,c(1:6)])
+kable(d[1,c(7,8,13,14,16,17)])
+```
+
+
+# Part2: Exploratory data analysis (EDA)    
+615 final project
+
+## 2.1 Rating score/Vote number distribution      
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# agreegate rating
+p1<-ggplot(d, aes(x=Aggregate.rating)) + 
+    geom_histogram(aes(y=..density..),binwidth=.5,colour="#CC6666", fill="#FFCC99") +
+    geom_density(alpha=.2, fill="#66CCFF")+
+    geom_line(stat="density",colour="#990033")
+
+p2<-ggplot(d,aes(x=Votes)) + 
+    geom_histogram(aes(y=..density..),binwidth=.9,colour="#663366", fill="#6699CC") +
+    geom_density(alpha=.2, fill="#666699")+
+    geom_line(stat="density",colour="#6600CC")
+
+gridExtra::grid.arrange(p1,p2,ncol = 1)
+```
+
+
+## 2.2 C-tree analysis        
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# new data and process variables
+library(party)
+tree <- filter(da,Rating.text!='Not rated')
+
+tree$Has.Table.booking = as.numeric(tree$Has.Table.booking)-1
+tree$Has.Online.delivery = as.numeric(tree$Has.Online.delivery)-1
+tree$Switch.to.order.menu = as.numeric(tree$Switch.to.order.menu)-1
+
+tree$Rating.text <- as.numeric(tree$Rating.text)
+tree$Rating.text[tree$Rating.text==1] <- 2
+tree$Rating.text[tree$Rating.text==2] <- 5
+tree$Rating.text[tree$Rating.text==3] <- 3
+tree$Rating.text[tree$Rating.text==5] <- 1
+tree$Rating.text[tree$Rating.text==6] <- 4
+
+formula<-Rating.text~Average.Cost.for.two+Has.Table.booking+Has.Online.delivery+Switch.to.order.menu+Votes
+dt<-ctree(formula,da,controls=ctree_control(minsplit=10,maxdepth=3))
+plot(dt)
+```
+
+## 2.3 Variables relationship    
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# new dataframe
+box <- filter(d,Country.Code %in% c('india','us','uk','southafrica'))
+box$Price.range <- as.numeric(box$Price.range)
+
+# rating color
+p3<-ggplot(box,aes(x=Rating.color,y=Aggregate.rating))+geom_boxplot(fill='#FF9900',outlier.colour="#FFCC33", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating color")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")+scale_x_discrete(limits=c('Dark Green','Green','Yellow','Orange','Red','White'))
+
+# rating rating text
+p4<-ggplot(box,aes(x=Rating.text,y=Aggregate.rating))+geom_boxplot(fill='#FFCC00',outlier.colour="#CC9999", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating text")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")+scale_x_discrete(limits=c('Poor','Average','Good','Very Good','Excellent'))
+
+# rating price range
+p5<-ggplot(box,aes(x=Price.range,y=Aggregate.rating,group=Price.range))+geom_boxplot(fill='#666699',outlier.colour="#336699", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating price")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")
+
+# rating country
+p6<-ggplot(box,aes(x=Country.Code,y=Aggregate.rating))+geom_boxplot(fill='#009999',outlier.colour="#009966", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating country")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")
+
+gridExtra::grid.arrange(p3,p4,p5,p6,ncol = 2)
+```
+
+## 2.3 Variables relationship    
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# price range~rating /country   more people
+p7<-ggplot(data=box, aes(x=Price.range, y=Votes,fill=Country.Code)) +
+      geom_col(stat="identity",position = "dodge")
+# votes~ 
+p8<-ggplot(data=box, aes(x=Rating.text, y=Votes,fill=Country.Code)) +
+      geom_col(stat="identity",position = "dodge")+scale_x_discrete(limits=c('Poor','Average','Good','Very Good','Excellent'))
+
+gridExtra::grid.arrange(p7,p8,ncol = 1)
+```
+
+
+## 2.3 Variables relationship    
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# votes~ rate   more rate leads to more customer?
+p9<-ggplot(da, aes(x = Aggregate.rating, y = Votes , color = Country.Code)) + geom_point(alpha=0.4) + geom_smooth(method=loess)
+
+# cost for two~votes   cheaper means more customer?
+p10<-ggplot(da, aes(x = Average.Cost.for.two, y = Votes , color = Country.Code)) + geom_point(alpha=0.4) +
+geom_smooth(method=loess)
+
+gridExtra::grid.arrange(p9,p10,ncol = 2)
+```
+
+
+# Part3: Principle component analysis (PCA)
+615 final project
+
+## 3.1 Result visualize         
+```{r,warning=FALSE,message=FALSE,dpi=500,echo=FALSE}
+#install package
+library("FactoMineR")
+library("factoextra")
+
+## new dataset
+pca <- tree[,c(2,8,10:14,16:17)]
+pca = model.matrix(data=pca,Country.Code~Average.Cost.for.two+Has.Table.booking+Has.Online.delivery+Switch.to.order.menu+Switch.to.order.menu+Price.range+Price.range+Aggregate.rating+Rating.text)
+
+## country avercost book delivery swtich pricerange votes   agregate rating
+res.pca <- PCA(X=pca, scale.unit = TRUE, ncp = 5, graph = FALSE)
+
+library("factoextra")
+eig.val <- get_eigenvalue(res.pca)
+kable(eig.val, digits = 4, align = "c",
+      caption = 'Pca result',booktabs = TRUE)
+```
+
+## 3.1 Result visualize  
+```{r,echo=FALSE}
+## visualize
+fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 50))
+
+```
+
+## 3.2 Devotion rate   
+```{r,echo=FALSE}
+fviz_pca_var(res.pca, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+             )
+```
+
+## 3.3 Another plot   
+```{r,echo=FALSE}
+fviz_cos2(res.pca, choice = "var", axes = 1:2)
+```
+
+
+
+# Part4: Text analysis      
+615 final project    
+  
+## 4.1 India     
+```{r out.width = "40%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ig.png")
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ib.png")
+```
+
+## 4.2 United State    
+```{r out.width = "40%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ug.png")
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ub.png")
+```
+
+# Part5: Mapping
+615 final project
+
+## 5.1 India   
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# package
+library(ggmap)
+library(animation)
+library(XML)
+
+# data used in map
+# levels(india$Rating.text)
+india$Rating.text <- factor(india$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+# map india
+ggmap(get_googlemap(center = 'india', zoom=4,maptype='terrain'),extent='device')+
+geom_point(data=india,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+```
+
+## 5.2 United Kingdom
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+library(ggplot2)
+library(maptools)
+library(mapdata)
+library(ggthemes)
+library(tibble)
+library(viridis)
+library(ggmap)
+
+uk$Rating.text <- factor(uk$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+# london england edinburgh manchester
+p11<-ggmap(get_googlemap(center = 'edinburgh', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")   
+
+p12<-ggmap(get_googlemap(center = 'london', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+p13<-ggmap(get_googlemap(center = 'Edgbaston', zoom=12,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")   
+
+p14<-ggmap(get_googlemap(center = 'manchester', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+gridExtra::grid.arrange(p11,p12,p13,p14,ncol = 2)
+
+```
+
+## 5.3 South Africa   
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+# map southafrica
+southafrica$Rating.text <- factor(southafrica$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+
+p15<-ggmap(get_googlemap(center = 'Victory Park Estate SH', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")
+
+p16<-ggmap(get_googlemap(center = 'Garston AH', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+p17<-ggmap(get_googlemap(center = 'Cape Town', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")
+
+p18<-ggmap(get_googlemap(center = 'Sandton', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+gridExtra::grid.arrange(p15,p16,p17,p18,ncol = 2)
+
+```
+
+## 5.4 United State
+```{r out.width = "80%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE,dpi=500}
+
+
+u <- map_data("state")
+state <- data_frame(statename=unique(u$region),stategroup=sample(10000, length(statename)))
+line <- map_data("usa")
+us$Rating.text <- factor(us$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+ggplot() + 
+  geom_map(data=u, map=u,
+                    aes(long, lat, map_id=region),
+                    color="#FF9900", fill="#FFFFCC", size=0.5)+
+  geom_map(data=state, map=u,
+                    aes(fill=stategroup,
+                        map_id=statename),
+                    color="white", size=0.5)+
+  scale_fill_viridis(name="Value")+
+  coord_map("polyconic")+geom_map(data=line, map=line,
+                    aes(long, lat, map_id=region),
+                    color="black", fill=NA, size=0.5)+
+  geom_point(data=us,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=0.9)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+```
+
+# Part6: Conclusion     
+615 final project   
+
+## Report discussion   
+**Result**    
+- Restaurant's supporting facilities such like delivery service, booking service could potentially influence customers' satisfaction degree.   
+- Price issues also ffect the aggregated rating scores.  
+- Different countries have different love and hate.  
+
+
+Limitations
+- A large quantity gap among countries dataset, making the result a little basied.   
+- Dataset lack columns that could be use during text analysis, leading the world clouds do not contain enough words. 
+
+## Future work
+**Improvement**  
+- Sufficient dataset rows and more detailed variables.     
+- Customers' specific comment could be added into the dataset.      
+
+**Future direction**      
+- Combine with knowledge in other field, such like machine learning.     
+- Report could be regarded as diet gudience for travellers.          
+ 
+## Reference      
+* Kaggle: https://www.kaggle.com/shrutimehta/zomato-restaurants-data       
+* CSDN: https://blog.csdn.net/      
+* JianShu: https://www.jianshu.com/      
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

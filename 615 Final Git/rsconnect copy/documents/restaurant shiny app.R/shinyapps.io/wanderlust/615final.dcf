@@ -1,0 +1,13 @@
+name: 615final
+title: 615final
+username:
+account: wanderlust
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 1606037
+bundleId: 2674557
+url: https://wanderlust.shinyapps.io/615final/
+when: 1576563258.55923
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|cloud_1.html|cloud_2.html|cloud_3.html|cloud_4.html|no.R|presentation.Rmd|report.pdf|report.Rmd|sites.csv|sitesmap2.html|cloud_1_files/htmlwidgets-1.5.1/htmlwidgets.js|cloud_1_files/wordcloud2-0.0.1/hover.js|cloud_1_files/wordcloud2-0.0.1/wordcloud.css|cloud_1_files/wordcloud2-0.0.1/wordcloud2-all.js|cloud_1_files/wordcloud2-binding-0.2.1/wordcloud2.js|cloud_2_files/htmlwidgets-1.5.1/htmlwidgets.js|cloud_2_files/wordcloud2-0.0.1/hover.js|cloud_2_files/wordcloud2-0.0.1/wordcloud.css|cloud_2_files/wordcloud2-0.0.1/wordcloud2-all.js|cloud_2_files/wordcloud2-binding-0.2.1/wordcloud2.js|cloud_3_files/htmlwidgets-1.5.1/htmlwidgets.js|cloud_3_files/wordcloud2-0.0.1/hover.js|cloud_3_files/wordcloud2-0.0.1/wordcloud.css|cloud_3_files/wordcloud2-0.0.1/wordcloud2-all.js|cloud_3_files/wordcloud2-binding-0.2.1/wordcloud2.js|cloud_4_files/htmlwidgets-1.5.1/htmlwidgets.js|cloud_4_files/wordcloud2-0.0.1/hover.js|cloud_4_files/wordcloud2-0.0.1/wordcloud.css|cloud_4_files/wordcloud2-0.0.1/wordcloud2-all.js|cloud_4_files/wordcloud2-binding-0.2.1/wordcloud2.js

@@ -1,0 +1,501 @@
+---
+title: "Final project for restaurants business analysis"
+author: "Shicheng Wang"
+date: "12/13/2019"
+output: pdf_document  
+---
+
+```{r setup, include=FALSE,dpi=500}
+knitr::opts_chunk$set(echo = TRUE)
+###install packages
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="png",fig.align  = 'center')
+pacman::p_load(
+ggplot2,
+knitr,
+arm,
+data.table,
+foreign,
+gridExtra,
+car,
+stringr,
+rstan,
+rstanarm,
+tidyverse,
+dplyr,
+gridExtra,
+magrittr,
+tidytext
+)
+```
+
+# 1.Abstract
+This is a statistical analysis report about restaurants characteristics throughout the world. The main goal of this research is to analyze the geographic distribution and potential factors that could influence a restaurant popularity in different countries. Specifically, C-tree and PCA(principle component analysis) have been appied into this analysis, and mapping methods are included in this report as well. Overall speaking, readers would get the general idea on eating preference in different country and how external factors could influence restaurants' ratinf scores.       
+# 2.Introduction      
+
+## 2.1 Background  
+More and more countries have paced into the moderately prosperous societies and based on different culture and traditions, people’s dietary preference could be various over countries. As we all know, restaurant’s service is directly related to customers' response, so how to figure out which factors could influence a lot is meaningful in modern world. What’s more, the restaurants' locations could be a important component in restaurant business. This reports has applied multiple methods in analyzing relative questions of restaurant business.  
+
+
+## 2.2 Data sources
+Dataset included in this report is downloaded from Kaggle. The data contains around 9000 restaurants in 9 countries with each restaurant's geographical position. Here is latest website:    
+
+* Zomato Restaurants Data: [link](https://www.kaggle.com/shrutimehta/zomato-restaurants-data)  
+
+## 2.3 Reaserch question
+The former part of report concentrates on curve the characteristics of variables and decisive relationships among them. The later part would penetrate on restaurants' economical effectiveness, trying to give sufficient information on their strength and weakness in different countries.  
+
+# 3.Data process
+## 3.1 Data cleaning
+Data cleaning has several steps. First, i cleared NA. rows, excluded data that contains meaningless value and picked useful columns. Next, i selected India, US, UK, South Africa as my target dataset, so i devided whole dataset in to four semi-datasets. Then i noticed different countries have different exchange rate, so i unified the currency standard.  
+
+
+```{r,include=FALSE}
+## access
+d <- read.csv('/Applications/BU/BU/615 Data Science in R/hw/615 final project/data/zomato.csv')
+
+## clear NA and columns which has 0 votes.
+d <- na.omit(d)
+d$Votes<-as.numeric(d$Votes)
+d <- filter(d,d$Votes!=0)
+
+## replace country id with actual name
+d$Country.Code[d$Country.Code==1] <- 'india'
+d$Country.Code[d$Country.Code==216] <- 'us'
+d$Country.Code[d$Country.Code==215] <- 'uk'
+d$Country.Code[d$Country.Code==189] <- 'southafrica'
+
+## select useful columns
+d <- d[,c(2:4,6,8:14,16:21)]
+
+## diveide (country code = country)
+india<-filter(d,Country.Code=='india')
+us<-filter(d,Country.Code=='us')
+uk<-filter(d,Country.Code=='uk')
+southafrica<-filter(d,Country.Code=='southafrica')
+
+## unify the exchange rate
+us$Average.Cost.for.two = as.numeric(us$Average.Cost.for.two)
+india$Average.Cost.for.two = 0.01413*india$Average.Cost.for.two
+uk$Average.Cost.for.two = 1.3324*uk$Average.Cost.for.two
+southafrica$Average.Cost.for.two = 0.06892*southafrica$Average.Cost.for.two
+
+## merge
+da <- rbind(us,india,uk,southafrica)
+da$Currency <- 'dollar'
+```
+
+## 3.2 Data overview
+* Take a look at the head of whole dataset in the beginning.    
+```{r,echo=FALSE}
+knitr::kable(head(d[runif(3,0,8457),c(1:6)]), digits = 4, align = "c",
+             caption = 'Restaurant data overview',booktabs = TRUE)
+knitr::kable(head(d[runif(3,0,8457),c(7,8,13,14,16,17)]), digits = 4, align = "c",
+             caption = 'Restaurant data overview',booktabs = TRUE)
+```
+
+* The following section lists several categorized variables.   
+```{r,echo=FALSE}
+kable(table(d$Price.range))
+kable(table(d$Rating.color))
+kable(table(d$Rating.text))
+par(mfrow=c(2,2))
+```
+
+* varibales interpretation  
+Here are interpretations for important variables:    
+
+Variable Name              | Interpretation
+-------------------------  | -----------------------------
+Country.Code               | Restaurant located at which country
+City                       | City Name of the Restaurant
+Cuisines                   | Types Of Cuisines Served
+Average.Cost.for.two       | Average Cost if two people visit the Restaurant
+Currency                   | Currency in each country
+Has.Table.booking          | Can we book tables in Restaurant? Yes/No
+Has.Online.delivery        | Can we have online delivery ? Yes/No
+Price.range                | Categorized price between 1-4
+Aggregate.rating           | Categorizing ratings between 1-5
+Rating.text                | Different Rating ranks
+Votes                      | Votes number received by restaurant from customers.
+
+
+# 4.C-tree analysis
+C-tree is used for analyzing variables decisive relationship in the dataset, here is the plot of C-tree analysis.   
+```{r,echo=FALSE,dpi=500,message=FALSE,warning=FALSE}
+# new data and process variables
+library(party)
+tree <- filter(da,Rating.text!='Not rated')
+
+tree$Has.Table.booking = as.numeric(tree$Has.Table.booking)-1
+tree$Has.Online.delivery = as.numeric(tree$Has.Online.delivery)-1
+tree$Switch.to.order.menu = as.numeric(tree$Switch.to.order.menu)-1
+
+tree$Rating.text <- as.numeric(tree$Rating.text)
+tree$Rating.text[tree$Rating.text==1] <- 2
+tree$Rating.text[tree$Rating.text==2] <- 5
+tree$Rating.text[tree$Rating.text==3] <- 3
+tree$Rating.text[tree$Rating.text==5] <- 1
+tree$Rating.text[tree$Rating.text==6] <- 4
+
+formula<-Rating.text~Average.Cost.for.two+Has.Table.booking+Has.Online.delivery+Switch.to.order.menu+Votes
+dt<-ctree(formula,da,controls=ctree_control(minsplit=10,maxdepth=3))
+plot(dt)
+```
+_From this plot we could see customers' votes number might exert majority power. It could be easily received that if a restaurant has more than 3 comments but no more than 51 comments, it could largely influence the other potential factors._  
+
+# 5.Exploratory data analysis
+This part mainly introduce series of analysis in order to get the general idea of variables' relationships.   
+   
+## 5.1 Rating score/Vote number distribution 
+```{r,echo=FALSE,dpi=500}
+# agreegate rating
+p1<-ggplot(d, aes(x=Aggregate.rating)) + 
+    geom_histogram(aes(y=..density..),binwidth=.5,colour="#CC6666", fill="#FFCC99") +
+    geom_density(alpha=.2, fill="#66CCFF")+
+    geom_line(stat="density",colour="#990033")
+
+p2<-ggplot(d,aes(x=Votes)) + 
+    geom_histogram(aes(y=..density..),binwidth=.9,colour="#663366", fill="#6699CC") +
+    geom_density(alpha=.2, fill="#666699")+
+    geom_line(stat="density",colour="#6600CC")
+
+gridExtra::grid.arrange(p1,p2,ncol = 1)
+```
+_Based on two plots, we could see the majority of rating score located between 3-4,indicating customers always give a relative pertinent comments. While,from the left part of plot, we could see customers may give extremely bad comments when they experienced some awful things._  
+_From the second plot, there votes density on the left side and when look through the whole dataset, we could see major vote nummber is around 170._  
+
+## 5.2 Distribution of variables
+```{r,warning=FALSE,echo=FALSE,dpi=500}
+# new dataframe
+box <- filter(d,Country.Code %in% c('india','us','uk','southafrica'))
+box$Price.range <- as.numeric(box$Price.range)
+
+# rating color
+p3<-ggplot(box,aes(x=Rating.color,y=Aggregate.rating))+geom_boxplot(fill='#FF9900',outlier.colour="#FFCC33", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating color")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")+scale_x_discrete(limits=c('Dark Green','Green','Yellow','Orange','Red','White'))
+
+# rating rating text
+p4<-ggplot(box,aes(x=Rating.text,y=Aggregate.rating))+geom_boxplot(fill='#FFCC00',outlier.colour="#CC9999", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating text")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")+scale_x_discrete(limits=c('Poor','Average','Good','Very Good','Excellent'))
+
+# rating price range
+p5<-ggplot(box,aes(x=Price.range,y=Aggregate.rating,group=Price.range))+geom_boxplot(fill='#666699',outlier.colour="#336699", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating price")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")
+
+# rating country
+p6<-ggplot(box,aes(x=Country.Code,y=Aggregate.rating))+geom_boxplot(fill='#009999',outlier.colour="#009966", outlier.shape=18, outlier.size=2)+scale_fill_brewer(palette = "Set3")+labs(title = "rating country")+theme(plot.title = element_text(hjust = 0.5))+stat_summary(fun.y = "mean", geom = "point", shape = 16, size = 1, color = "white")
+
+gridExtra::grid.arrange(p3,p4,p5,p6,ncol = 2)
+```
+_According to these plots, we know the darker rating color of a restaurant, the higher rating score it would get, the restaurant would be valued more higer degree._  
+_From the later two plots, the higher price range would lead to more rating score._  
+_South Africa, US and Uk has more rating score than india._  
+
+## 5.3 What could influence votes number
+```{r,warning=FALSE,echo=FALSE,dpi=500}
+# price range~rating /country   more people
+p7<-ggplot(data=box, aes(x=Price.range, y=Votes,fill=Country.Code)) +
+      geom_col(stat="identity",position = "dodge")
+# votes~ 
+p8<-ggplot(data=box, aes(x=Rating.text, y=Votes,fill=Country.Code)) +
+      geom_col(stat="identity",position = "dodge")+scale_x_discrete(limits=c('Poor','Average','Good','Very Good','Excellent'))
+
+gridExtra::grid.arrange(p7,p8,ncol = 1)
+```
+_No matter which country is, if a restaurant has larger price range and higher judgement, the votes number would be higher in this way, indicating the annual passenger flow would be more intense._  
+
+```{r,echo=FALSE,dpi=500}
+# votes~ rate   more rate leads to more customer?
+p9<-ggplot(da, aes(x = Aggregate.rating, y = Votes , color = Country.Code)) + geom_point(alpha=0.4) + geom_smooth(method=loess)
+
+# cost for two~votes   cheaper means more customer?
+p10<-ggplot(da, aes(x = Average.Cost.for.two, y = Votes , color = Country.Code)) + geom_point(alpha=0.4) +
+geom_smooth(method=loess)
+
+gridExtra::grid.arrange(p9,p10,ncol = 2)
+```
+_These two plots have confirmed the previous conclusion. The more rating score, the more customer flow. In addition, if the average cost is too high, the customer flow would contrary decrease, which matches with our commensense(The rich are in the minority in the world.)._  
+
+# 6.Principal Component Analysis
+```{r,warning=FALSE,message=FALSE,dpi=500,echo=FALSE}
+#install package
+library("FactoMineR")
+library("factoextra")
+
+## new dataset
+pca <- tree[,c(2,8,10:14,16:17)]
+pca = model.matrix(data=pca,Country.Code~Average.Cost.for.two+Has.Table.booking+Has.Online.delivery+Switch.to.order.menu+Switch.to.order.menu+Price.range+Price.range+Aggregate.rating+Rating.text)
+
+## country avercost book delivery swtich pricerange votes   agregate rating
+res.pca <- PCA(X=pca, scale.unit = TRUE, ncp = 5, graph = FALSE)
+print(res.pca)
+
+library("factoextra")
+eig.val <- get_eigenvalue(res.pca)
+kable(eig.val, digits = 4, align = "c",
+      caption = 'Pca result',booktabs = TRUE)
+
+## visualize
+fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 50))
+
+```
+_From this plot we can see the first four dimensions could explain 84% variance difference which could be regarded acceptable in the further analysis._  
+
+```{r,warning=FALSE,message=FALSE,dpi=500,echo=FALSE}
+## variables relationship plot
+fviz_pca_var(res.pca, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+             )
+##
+fviz_cos2(res.pca, choice = "var", axes = 1:2)
+```
+_These two plots better display each variables' distribution value. We can see menu/rating/price/booking/cost have large impact to the principle component._  
+
+
+# 7.Text analysis
+First, i exact the cuisine for each restaurant and choose US and India as the target. The text analysis in this report would compare the difference between relative good/ relative bad group of restaurants in US and India respectively.   
+```{r,message=FALSE,include=FALSE}
+# install the package
+library(tidytext)
+library(devtools)
+library(wordcloud2)
+library(wordcloud)
+library(usethis)
+library(RColorBrewer)
+library(htmlwidgets)
+
+# india good&bad
+text_india1 <- subset(india,Rating.text %in% c("Excellent","Very Good"))
+text_india0 <- subset(india,Rating.text %in% c("Average","Poor","Good"))
+
+i_g <- text_india1$Cuisines
+i_b <- text_india0$Cuisines 
+
+i_g <-tibble(line=1:808,text=i_g)
+i_b <-tibble(line=1:5705,text=i_b)
+
+i_g$text<-as.character(i_g$text)
+i_b$text<-as.character((i_b$text))
+
+i_g <-
+  i_g %>%
+  unnest_tokens(output=word,input=text,token="words") %>%
+  anti_join(stop_words) %>% count(word,sort = TRUE)
+i_b <-
+  i_b %>%
+  unnest_tokens(output=word,input=text,token="words") %>%
+  anti_join(stop_words) %>% count(word,sort = TRUE)
+
+# us good&bad
+text_us1<-subset(us,Rating.text %in% c("Excellent","Very Good"))
+text_us0<-subset(us,Rating.text %in% c("Average","Poor","Good"))
+
+u_g <- text_us1$Cuisines
+u_b <- text_us0$Cuisines
+
+u_g <-tibble(line=1:247,text=u_g)
+u_b <-tibble(line=1:184,text=u_b)
+
+u_g$text<-as.character(u_g$text)
+u_b$text<-as.character((u_b$text))
+
+u_g <-
+  u_g %>%
+  unnest_tokens(output=word,input=text,token="words") %>%
+  anti_join(stop_words) %>% count(word,sort = TRUE)
+u_b <-
+  u_b %>%
+  unnest_tokens(output=word,input=text,token="words") %>%
+  anti_join(stop_words) %>% count(word,sort = TRUE)
+
+###
+# india good
+cloud_1 <- wordcloud2(i_g,size=0.8,color = "random-light",shape = "cardioid",backgroundColor = "#FFFFCC",
+                      minRotation = -pi/6, maxRotation = -pi/6, minSize = 10)
+
+
+# india bad
+cloud_2 <- wordcloud2(i_b,size=0.8,color = "random-dark",shape = "cardioid",backgroundColor = "#99CC99	",
+                      minRotation =  pi/6, maxRotation =  pi/6, minSize = 10,
+  rotateRatio = 1)
+
+
+# us good
+cloud_3 <- wordcloud2(u_g,size=0.8,color = "random-light",shape = "triangle",backgroundColor = "#CCFFFF",
+                      minRotation = -pi/6, maxRotation = -pi/6, minSize = 10,
+  rotateRatio = 1)
+
+
+# us bad
+cloud_4 <- wordcloud2(u_b,size=0.8,color = "random-dark",shape = "triangle",backgroundColor = "#CC99CC",
+                      minRotation =  pi/6, maxRotation =  pi/6, minSize = 10,
+  rotateRatio = 1)
+
+# save files
+saveWidget(cloud_1,"cloud_1.html",selfcontained = F)
+webshot::webshot("cloud_1.html","cloud_1.png",vwidth = 600, vheight = 500, delay =5)
+
+saveWidget(cloud_2,"cloud_2.html",selfcontained = F)
+webshot::webshot("cloud_2.html","cloud_2.png",vwidth = 600, vheight = 500, delay =5)
+
+saveWidget(cloud_3,"cloud_3.html",selfcontained = F)
+webshot::webshot("cloud_3.html","cloud_3.png",vwidth = 600, vheight = 500, delay =5)
+
+saveWidget(cloud_4,"cloud_4.html",selfcontained = F)
+webshot::webshot("cloud_4.html","cloud_4.png",vwidth = 600, vheight = 500, delay =5)
+```
+
+```{r,echo=FALSE,message=FALSE}
+print(cloud_1)
+print(cloud_2)
+print(cloud_3)
+print(cloud_4)
+```
+
+```{r out.width = "60%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ig.png")
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ib.png")
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ug.png")
+knitr::include_graphics("/Applications/BU/BU/615 Data Science in R/hw/615 final project/text analysis picture/ub.png")
+```
+
+
+_The above four pictures are arranged in order, respectively represent  India good/India bad/US good/US bad. As we can see, people would prefer their local food first. For India people, they likes eating  italian or continental foods and they may not like Chinese food. For Amercian, they prefer seafood, sandwich or pizza, however, they are not likely to eat exotic food._  
+
+# 8.Mapping
+To better give a visualized understanding, i presented restaurant maps for four countries categorized by restaurants' comprehensive rating score.  
+
+## 8.1 India
+```{r,warning=FALSE,message=FALSE,echo=FALSE,dpi=500}
+# package
+library(ggmap)
+library(animation)
+library(XML)
+
+# data used in map
+# levels(india$Rating.text)
+india$Rating.text <- factor(india$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+# map india
+ggmap(get_googlemap(center = 'india', zoom=4,maptype='terrain'),extent='device')+
+geom_point(data=india,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+```
+
+## 8.2 United Kingdom
+```{r,message=FALSE,warning=FALSE,echo=FALSE,dpi=500}
+library(ggplot2)
+library(maptools)
+library(mapdata)
+library(ggthemes)
+library(tibble)
+library(viridis)
+library(ggmap)
+
+uk$Rating.text <- factor(uk$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+# london england edinburgh manchester
+p11<-ggmap(get_googlemap(center = 'edinburgh', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")   
+
+p12<-ggmap(get_googlemap(center = 'london', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+p13<-ggmap(get_googlemap(center = 'Edgbaston', zoom=12,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")   
+
+p14<-ggmap(get_googlemap(center = 'manchester', zoom=13,maptype = 'hybrid'),extent='device')+
+geom_point(data=uk,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=0.8)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+gridExtra::grid.arrange(p11,p12,p13,p14,ncol = 2)
+
+```
+
+## 8.3 South Africa
+```{r,message=FALSE,warning=FALSE,echo=FALSE,dpi=500}
+# map southafrica
+southafrica$Rating.text <- factor(southafrica$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+
+p15<-ggmap(get_googlemap(center = 'Victory Park Estate SH', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")
+
+p16<-ggmap(get_googlemap(center = 'Garston AH', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+p17<-ggmap(get_googlemap(center = 'Cape Town', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))+
+  theme(legend.position = "none")
+
+p18<-ggmap(get_googlemap(center = 'Sandton', zoom=13,maptype = 'satellite'),extent='device')+
+geom_point(data=southafrica,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=2)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+gridExtra::grid.arrange(p15,p16,p17,p18,ncol = 2)
+
+```
+
+## 8.4 United States
+```{r,warning=FALSE,message=FALSE,echo=FALSE,dpi=500}
+
+
+u <- map_data("state")
+state <- data_frame(statename=unique(u$region),stategroup=sample(10000, length(statename)))
+line <- map_data("usa")
+us$Rating.text <- factor(us$Rating.text,levels=c("Excellent","Very Good","Good","Average","Poor","Not rated"))
+
+ggplot() + 
+  geom_map(data=u, map=u,
+                    aes(long, lat, map_id=region),
+                    color="#FF9900", fill="#FFFFCC", size=0.5)+
+  geom_map(data=state, map=u,
+                    aes(fill=stategroup,
+                        map_id=statename),
+                    color="white", size=0.5)+
+  scale_fill_viridis(name="Value")+
+  coord_map("polyconic")+geom_map(data=line, map=line,
+                    aes(long, lat, map_id=region),
+                    color="black", fill=NA, size=0.5)+
+  geom_point(data=us,aes(x=Longitude,y=Latitude,color=Rating.text,shape=Rating.text),alpha=1,size=0.9)+
+  scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9","#FF6600","#9966FF","#990066"))
+
+```
+
+
+# 9.Result and discussion
+## 9.1 Result
+From series charts and bunches of plots presented above, the conclusion could be make that restaurant's supporting facilities such like delivery service, booking service could potentially influence customers' satisfaction degree. Besides, the price issues also ffect the aggregated rating scores. For the citizens' first choice of eating is their local food. Different countries would have different love and hate. from this we could infer this could be ascribed to the reality that each country all has their traditions and culture.  
+
+## 9.2 Limitation
+The dataset i get does not meet my expactation very much because there there is a large quantity gap among countries dataset, making the result a little basied. Moreover, dataset lack columns that could be use during text analysis, leading the world clouds do not contain enough words.  
+
+## 9.3 Improvement
+If more balanced data amount among countries' restaurants are presented and customers's specific comments recorded in the dataset, the analysis could be elevated to an upper reasonable level.   
+
+## 9.4 Future direction 
+This report could be combined with some other knowledge, such as machine learning to make the analysis more practical. This kind of report could be a convincing reference for travellers to use.  
+
+Some other method could be added into this analysis such as statistical learning to make this analysis more strengthful. Additionally, this analysis could be used into sports field(not limited to NBA), NFL, FIFA, hockey, and the like.     
+
+# 10.Reference
+* Kaggle: https://www.kaggle.com/shrutimehta/zomato-restaurants-data    
+* CSDN: https://blog.csdn.net/    
+* JianShu: https://www.jianshu.com/   
+
+
+
+
+
+
+
+
+
+
