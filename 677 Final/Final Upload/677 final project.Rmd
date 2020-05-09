@@ -1,0 +1,400 @@
+---
+title: "677 final project"
+professor: "Haviland Wright"
+author: "Shicheng Wang"
+date: "5/1/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(reshape2)
+library(tidyverse)
+library(rvest)
+library(magrittr)
+library(ggmap)
+library(stringr)
+library(kableExtra)
+library(gridExtra)
+library (pwr)
+library (bayesAB)
+```
+
+
+# 1.Abstract
+This paper focuses on the novel coronavirus situation of global transmission, and introduces multiple data sets about novel coronavirus. Valuable visualization analysis is made at the world level, the American level, the state level and the patient level respectively. In addition, this paper makes a further exploration, comparing the patterns of virus spread in California and New Jersey, and comparing the distribution of patient growth in the two states, so as to infer the impact of different government response measures on the health status of people in the region.
+
+# 2.Introduction  
+
+## 2.1 Background
+Starting in November 2019, covid-19 has gradually spread around the world, endangering the lives of many people. In many countries, including China and the United States, governments are starting to advise citizens to stay at home, keep a social distance, and keep an eye on health and safety. School closures, social shutdowns and other phenomena are what we do not want to see. However, there are still some regional governments that have failed to raise security awareness, leading to serious consequences. The purpose of this study is to analyze the global covid-19 situation and compare the differences in the spread of the virus in different states.  
+
+
+## 2.2 Data sources
+All data included in this research has been collected from multiple resources. Datasets used for EDA part are from CDC and John Hopkins University medical center. The datasets used for distribution analysis and ABtest are from Kaggle.
+
+## 2.3 Reaserch question
+The novel coronavirus pneumonia is studied in this paper, and the impact of different initiatives of New Jersey and California governments on the growth rate of patients is also studied.  
+
+# 2.4 Data Overview
+``````{r, echo=FALSE, warning=FALSE}
+##################################################################   Data for EDA
+# world data
+world <- read.csv("World.csv")
+
+world$Country.Region[world$Country.Region == "US"] = "USA"
+
+
+world$ObservationDate <- as.factor(world$ObservationDate)
+EDA_world <- filter(world, world$ObservationDate == "05/04/2020")
+EDA_world <- EDA_world[,c(4, 6:8)]
+EDA_world <- as.data.frame(EDA_world)
+
+# combine locations 
+map.world <- map_data("world")
+EDA_world_location <- inner_join(map.world, EDA_world, by = c('region' = 'Country.Region'))
+EDA_world_location <- EDA_world_location %>% group_by(EDA_world_location$region) %>% slice(1)
+EDA_world_location <- EDA_world_location[,c(5,1,2,7,8,9)]
+
+# US data 
+us_whole  <- read.csv("us-whole.csv")
+us_state  <- read.csv("us-states.csv")
+us_county <- read.csv("us-counties.csv")
+```
+
+```{r, echo=FALSE}
+##################################################################   Data for Abtest
+
+# main dataset & CA/NJ
+main <- read.csv("US.csv")
+CA <- filter(main, main$state == "CA")
+NJ <- filter(main, main$state == "NJ")
+
+#
+main$state <- as.character(main$state)
+
+# transform rate (covid19/all cases) update May 1st.
+rate <- read.csv("RATE.csv")
+rate <- filter(rate, rate$State =="CA"|rate$State=="NJ")
+rate <- rate[,c(4,5,7,8)]
+
+```
+
+## EDA data overview
+```{r,echo=FALSE}
+kable(head(EDA_world_location))
+```
+
+## Analysis data overview
+```{r,echo=FALSE}
+kable(head(EDA_world_location))
+```
+
+
+
+# 3.Exploratory data analysis
+## 3.1 Worldwide analysis
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# distribution throughtout world
+EDA_world_location$long <- as.numeric(EDA_world_location$long)
+EDA_world_location$lat <- as.numeric(EDA_world_location$lat)
+
+ggplot() +
+      geom_map(data=map.world, map=map.world,
+                    aes(x=long, y=lat, map_id=region),
+                    color="#FF9900", fill="#FFCC33", size=0.05, alpha=1/4) +
+      geom_point(data=EDA_world_location,
+                      aes(x=long, y=lat,color=Confirmed), 
+                      size=3, alpha=0.5)+
+      scale_fill_brewer(palette = 'Spectral')+
+      labs(title = 'Covid-19 distribution wordwide',subtitle = "Recent update on May 5th")+
+      scale_colour_gradient(low = '#66CCCC', high = '#660099')
+
+```
+* This picture shows the total number and distribution of cases in various countries around the world. We can see that Europe, America and Asia have serious epidemic areas. 
+
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# proportion of the countries (the most confirmed cases in 5/4)
+EDA_world_location <-  arrange(EDA_world_location, desc(Confirmed))
+world_pie <- EDA_world_location[1:10,c(1,4:6)]
+world_pie$pro <- paste(round(world_pie$Confirmed/14850.32,1), "%", sep='')
+
+ggplot(world_pie, aes(x="", y=Confirmed, fill=region))+
+geom_bar(width = 1, stat = "identity")+
+  coord_polar("y", start=0)+
+  scale_fill_brewer(palette = 'Spectral')+
+  theme_minimal()+
+  geom_text(aes(label = pro), position = position_stack(vjust = 0.5))
+```
+* The pie chart shows the proportion of countries with severe global epidemics (the United States is excluded from the data set and will be analyzed later). We know that America and Europe are still the areas with serious epidemic.
+  
+
+## 3.2 US-wide analysis
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# US increase
+ggplot(us_whole, aes(x=date)) + 
+            geom_point(aes(y=cases),color="#FFCC66",shape=14) + 
+            geom_line(aes(y=cases)) +
+            geom_point(aes(y=deaths),color="#9966CC",shape=10) + 
+            geom_line(aes(y=deaths)) +
+            theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+            labs(title = 'US Covid-19 trend', subtitle = "Yellow=Case, Purple=Death")+
+            scale_x_discrete(breaks=c("2020-01-21","2020-02-09","2020-02-29","2020-03-20",
+                                      "2020-04-09","2020-04-29")) 
+ 
+
+```
+* This chart shows the daily growth of the United States from January 21 to the beginning of May, which is in line with the exponential distribution, while the growth rate does not show a pattern to stop.
+ 
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# US states
+map.US <- filter(map.world, map.world$region =="USA") %>% filter(lat <= "50") %>% filter(lat > "25")
+
+
+map.us <- read.csv("state_location.csv")
+map.us <- map.us[,3:5]
+
+US_state <- inner_join(map.us, us_state, by = c('location' = 'state'))
+US_state <- US_state %>% group_by(location) %>% slice(n())
+
+ggplot() +
+      geom_map(data=map.US, map=map.US,
+                    aes(x=long, y=lat, map_id=region),
+                    color="#663399", fill="#FF9999", size=0.05, alpha=1/4) +
+      geom_point(data=US_state,
+                      aes(x=lon, y=lat,color=cases), 
+                      size=3, alpha=0.5)+
+      scale_fill_brewer(palette = 'Spectral')+
+      labs(title = 'Covid-19 distribution wordwide',subtitle = "Recent update on May 5th")+
+      scale_colour_gradient(low = '#6666CC', high = '#663300')+
+      scale_x_discrete(breaks=c(-100))
+```
+* The eastern part of the United States is the worst, followed by the west coast.
+
+## 3.3 Patient scope analysis 
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+symptoms <- data.frame(
+   symptoms = c ('Fever',
+        'Dry cough',
+        'Fatigue',
+        'Sputum production',
+        'Shortness of breath',
+        'Muscle pain',
+        'Sore throat',
+        'Headache',
+        'Chills',
+        'Nausea or vomiting',
+        'Nasal congestion',
+        'Diarrhoea',
+        'Haemoptysis',
+        'Conjunctival congestion'),            percentage=c(87.9,67.7,38.1,33.4,18.6,14.8,13.9,13.6,11.4,5.0,4.8,3.7,0.9,0.8))
+   
+ggplot(data=symptoms, aes(x=symptoms, y=percentage)) +
+  geom_bar(stat="identity")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))
+
+```
+
+
+## 3.4 CA & NJ analysis
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+da <- filter(us_state, state=="New Jersey"|state=="California")
+da <- da[,-3]
+# CA vs NJ
+p1<-ggplot(data=da, aes(x=date, y=cases, fill=state)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  scale_fill_manual(values=c('#9900FF','#FF6600'))+
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+            labs(title = 'CA vs NJ cases', subtitle = "Update to May 6th")+
+            scale_x_discrete(breaks=c("2020-01-25","2020-02-12","2020-03-01","2020-03-19",
+                                      "2020-04-06","2020-04-24","2020-05-06")) 
+
+p2<-ggplot(data=da, aes(x=date, y=deaths, fill=state)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  scale_fill_manual(values=c('#99CC00','#FFCC00'))+
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+            labs(title = 'CA vs NJ deaths', subtitle = "Update to May 6th")+
+            scale_x_discrete(breaks=c("2020-01-25","2020-02-12","2020-03-01","2020-03-19",
+                                      "2020-04-06","2020-04-24","2020-05-06")) 
+
+
+
+gridExtra::grid.arrange(p1,p2,ncol = 1)
+
+```
+
+
+# 4.AB Test
+
+## 4.1 Overview
+A/B test is the shorthand for a simple controlled experiment. As the name implies, two versions (A and B) of a single variable are compared, which are identical except for one variation that might affect a user's behavior. A/B tests are widely considered the simplest form of controlled experiment. However, by adding more variants to the test, this becomes more complex. This test can give an obvious overview of state comparasion.
+
+Aimming at my research question, the hypothesis could be the following:
+* Null Hypothesis: New York and California have the same growth pattern.
+* Alternative Hypothesis: New York and California have different growth pattern.
+
+## 4.2 Compare distribution
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+
+p3<-ggplot(da, aes(x=cases, fill=state)) + geom_density(alpha=0.3)+
+    labs(x="Frequency of cases", y="Density", title = "Cases Density")+
+    scale_fill_manual(values=c("#FF9933", "#6666CC"))
+
+p4<-ggplot(da, aes(x=deaths, fill=state)) + geom_density(alpha=0.3)+
+    labs(x="Frequency of deaths", y="Density", title = "Deaths density")+
+    scale_fill_manual(values=c("#FF0099", "#330066"))
+
+gridExtra::grid.arrange(p3,p4,ncol = 1)
+
+```
+It seems CA has more density at the lower level while the NJ has a high death rate.  
+
+## construct initial ABtest
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+#
+library (pwr)
+
+# create vectors
+ca_case  <- filter(da,da$state == "New Jersey")[,3]
+ca_death <- filter(da,da$state == "New Jersey")[,4]
+
+nj_case  <- filter(da,da$state == "California")[,3]
+nj_death <- filter(da,da$state == "California")[,4]
+
+ca_cov <- filter(rate,rate$State == "CA")[,3]
+nj_cov <- filter(rate,rate$State == "NJ")[,3]
+
+ca_all <- filter(rate,rate$State == "CA")[,4]
+nj_all <- filter(rate,rate$State == "NJ")[,4]
+```
+
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+abtest_initial <- data.frame(state=c('ca','nj'),all=c(54698,26254),cov=c(1150,5099))
+kable(abtest_initial)
+
+######## 2-sample test for equality of proportions ############
+prop.test(c (1150, 5099), c (54698, 26254))
+```
+The p-value is less than 0.05, so we can reject the null hypothesis.
+
+But one cannot directly conclude that A and B have dissimilar death rates. Here true underlying behavior is not known as we are trying to test the hypothesis by carrying out the experiment over a sample.
+
+## Bayesian ABtest
+Bayesian statistics in A/B testing is mainly based on past or prior knowledge of similar experiment and the present data. The past knowledge is known as prior also prior probability distribution (Wiki) is combined with current experiment data to make a conclusion on the test at hand.  
+
+In this method, we model the metric for each variant. We have prior knowledge about the conversion rate for A which has a certain range of values based on the historical data. After observing data from both variants, we estimate the most likely values or the new evidence for each variant.  
+
+To better understanding the prior distribution, checking the following two plots.
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# check the bayesian distribution 
+p5<-ggplot(rate, aes(x=Deaths.involving.COVID.19, fill=State)) + geom_density(alpha=0.3)+
+    labs(x="Frequency of COV-19 deaths cases", y="Density", title = "COV-19 death density")+
+    scale_fill_manual(values=c("#FF6600", "#339999"))
+
+
+p6<-ggplot(rate, aes(x=rate$Deaths.from.All.Causes, fill=State)) + geom_density(alpha=0.3)+
+    labs(x="Frequency of all deaths cases", y="Density", title = "All case death density")+
+    scale_fill_manual(values=c("#993300", "#33CCFF"))
+
+
+gridExtra::grid.arrange(p5,p6,ncol = 1)
+
+```
+
+According to two density plot, i could assume the distribution could follow part of binomial distribution. 
+
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+## test COV-19 deaths
+#ca_test <- rlnorm(n=19, mean=76, sd=140)
+#nj_test <- rlnorm(n=19, mean=268, sd=270)
+ca_test <- rbinom(15, 1, 0.02102453)
+nj_test <- rbinom(19, 1, 0.194218)
+
+#plotLogNormal (4, 1)    # prior guess1 
+#plotLogNormal (5, 0.5)  # prior guess2
+
+# plot the prior
+plotBeta (1, 1)  
+plotBeta (100, 200) ## more specific range of p
+
+# AB test for the first prior
+
+AB_bayesian <- bayesTest (ca_test, nj_test,
+                 priors = c ('alpha' = 1, 'beta' = 1),
+                 distribution = 'bernoulli')
+
+#
+plot(AB_bayesian)
+#
+summary(AB_bayesian)
+```
+Under the assumption that the statistics follow the Beta(1,1) prior distribution, we can see the summary of the statistics and density distribution in A & B class. The conclusion could be make that New Jersey grew faster than California in all respects in early May. The government needs to strengthen prevention.
+
+
+```{r out.width = "70%", fig.align = "center", echo=FALSE , message=FALSE, warning=FALSE}
+# AB test for the second prior
+AB_bayesian <- bayesTest (ca_test, nj_test,
+                 priors = c ('alpha' = 100, 'beta' = 200),
+                 distribution = 'bernoulli')
+
+#
+plot(AB_bayesian)
+
+#
+summary(AB_bayesian)
+```
+Under the assumption that the statistics follow the Beta(100,200) prior distribution, we can see there are relative high proportion of overlap of both two states. We can assume Null hypothesis true in some way.
+
+
+# 5.Discussion
+There could be several disadvantages during the analysis. 
+
+* The datasets are collected from different resourses which could lower the accuracy of this analysis.
+
+* The Disadvantages of Using A/B Test:
+The A/B test considers the sample data of the whole population at a certain time point. Therefore, the test is limited to a certain point in time. Second, the sample data may not tell us the true mortality rate of the original population.  
+
+* The Disadvantages of Using Bayesian A/B Test:
+The prior probability is artificially speculated and may not be accurate In addition, the running time of Bayesian algorithm is too long.
+
+# 6.Reference
+* https://github.com/CSSEGISandData/COVID-19/tree/master/archived_data
+* https://data.cdc.gov/NCHS/Provisional-COVID-19-Death-Counts-by-Place-of-Deat/uggs-hy5q
+* https://data.cdc.gov/NCHS/Provisional-COVID-19-Death-Counts-by-Sex-Age-and-S/9bhg-hcku
+* https://www.csdn.net/
+* https://www.kaggle.com/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
